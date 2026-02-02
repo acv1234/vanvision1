@@ -161,7 +161,6 @@ const QuoteModal = ({
   underlaymentColor: string;
   onSubmit: (data: any) => void;
 }) => {
-  const [squareFootage, setSquareFootage] = useState('');
   const [projectTimeline, setProjectTimeline] = useState('1-2 weeks');
   const [companyName, setCompanyName] = useState('');
   const [phone, setPhone] = useState('');
@@ -176,7 +175,6 @@ const QuoteModal = ({
       email,
       companyName,
       phone,
-      squareFootage,
       projectTimeline,
       logoColor,
       underlaymentColor,
@@ -264,19 +262,7 @@ const QuoteModal = ({
             />
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-bold text-vb-dark mb-2">Square Footage *</label>
-              <input
-                type="text"
-                required
-                value={squareFootage}
-                onChange={(e) => setSquareFootage(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded focus:border-vb-dark focus:outline-none"
-                placeholder="e.g., 2500 sq ft"
-              />
-            </div>
-            <div>
+          <div>
               <label className="block text-sm font-bold text-vb-dark mb-2">Project Timeline *</label>
               <select
                 required
@@ -290,7 +276,6 @@ const QuoteModal = ({
                 <option value="1-2 months">1-2 months</option>
                 <option value="Planning stage">Just Planning</option>
               </select>
-            </div>
           </div>
 
           <div>
@@ -722,7 +707,6 @@ const App: React.FC = () => {
 📱 Phone: ${quoteData.phone}
 
 **Project Details:**
-📏 Square Footage: ${quoteData.squareFootage}
 ⏰ Timeline: ${quoteData.projectTimeline}
 
 **Design Specifications:**

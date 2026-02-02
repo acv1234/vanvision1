@@ -43,7 +43,7 @@ export const resizeImage = (file: File, maxWidth = 2048): Promise<string> => {
         const ctx = canvas.getContext('2d');
         ctx?.drawImage(img, 0, 0, width, height);
         
-        const dataUrl = canvas.toDataURL('image/png'); // Force PNG for alpha support
+        const dataUrl = canvas.toDataURL('image/png');
         resolve(dataUrl.split(',')[1]);
       };
       img.onerror = (err) => reject(err);
@@ -72,7 +72,6 @@ export const recolorLogo = (file: File, targetColor: string): Promise<string> =>
       img.src = event.target?.result as string;
       
       img.onload = () => {
-        // 1. Setup Canvas
         const maxDim = 800; 
         let w = img.width;
         let h = img.height;
@@ -92,17 +91,16 @@ export const recolorLogo = (file: File, targetColor: string): Promise<string> =>
           return;
         }
 
-        // Draw original image
         ctx.drawImage(img, 0, 0, w, h);
 
         const imageData = ctx.getImageData(0, 0, w, h);
         const data = imageData.data;
 
         // ---------------------------------------------------------
-        // BACKGROUND REMOVAL STRATEGY: Global Color Keying
+        // IMPROVED BACKGROUND REMOVAL
         // ---------------------------------------------------------
         
-        // 1. Check for Existing Transparency (Alpha channel usage)
+        // Check for existing transparency
         let significantTransparencyFound = false;
         let transparentPixelCount = 0;
         const sampleLimit = 1000;
@@ -114,16 +112,13 @@ export const recolorLogo = (file: File, targetColor: string): Promise<string> =>
             }
         }
         
-        // If > 5% of sampled pixels are transparent, we assume the user uploaded a valid PNG cutout.
         if (transparentPixelCount > (data.length / 4 / step) * 0.05) {
             significantTransparencyFound = true;
         }
 
-        // If the image is opaque (like a JPEG or white-bg PNG), we remove the background.
+        // Remove background if needed
         if (!significantTransparencyFound) {
-            
-            // 2. Identify Background Color from Borders
-            // We sample the perimeter of the image to find the dominant color.
+            // STEP 1: Identify border color (usually white)
             let rSum = 0, gSum = 0, bSum = 0, count = 0;
             
             const addSample = (idx: number) => {
@@ -134,77 +129,157 @@ export const recolorLogo = (file: File, targetColor: string): Promise<string> =>
                 count++;
             };
 
-            // Top & Bottom Rows
+            // Sample perimeter
             for (let x = 0; x < w; x++) {
-                addSample(x); // Top row
-                addSample((h - 1) * w + x); // Bottom row
+                addSample(x);
+                addSample((h - 1) * w + x);
             }
-            // Left & Right Columns
             for (let y = 0; y < h; y++) {
-                addSample(y * w); // Left col
-                addSample(y * w + (w - 1)); // Right col
+                addSample(y * w);
+                addSample(y * w + (w - 1));
             }
 
-            const bgR = rSum / count;
-            const bgG = gSum / count;
-            const bgB = bSum / count;
+            const borderR = rSum / count;
+            const borderG = gSum / count;
+            const borderB = bSum / count;
 
-            // 3. Remove Background (Global Keying)
-            // This removes ALL pixels matching the background color, handling islands (like inside 'O')
-            const tolerance = 60; // Tuning for JPEG artifacts
+            // STEP 2: Find potential colored background
+            // Sample center 60% of image to find dominant background color
+            const centerStartX = Math.floor(w * 0.2);
+            const centerEndX = Math.floor(w * 0.8);
+            const centerStartY = Math.floor(h * 0.2);
+            const centerEndY = Math.floor(h * 0.8);
             
-            for (let i = 0; i < data.length; i += 4) {
-                const r = data[i];
-                const g = data[i+1];
-                const b = data[i+2];
-
-                // Euclidean distance for better color matching
-                const dist = Math.sqrt(
-                    (r - bgR) * (r - bgR) + 
-                    (g - bgG) * (g - bgG) + 
-                    (b - bgB) * (b - bgB)
-                );
-
-                if (dist < tolerance) {
-                    data[i + 3] = 0; // Make Transparent
-                } else if (dist < tolerance + 20) {
-                     // Soft edges
-                     const alpha = (dist - tolerance) / 20 * 255;
-                     data[i + 3] = Math.min(255, alpha);
+            const colorMap = new Map<string, number>();
+            let centerCount = 0;
+            
+            for (let y = centerStartY; y < centerEndY; y += 2) {
+                for (let x = centerStartX; x < centerEndX; x += 2) {
+                    const idx = (y * w + x) * 4;
+                    const r = data[idx];
+                    const g = data[idx + 1];
+                    const b = data[idx + 2];
+                    
+                    // Bucket colors to ~16 value increments
+                    const rBucket = Math.floor(r / 16);
+                    const gBucket = Math.floor(g / 16);
+                    const bBucket = Math.floor(b / 16);
+                    const colorKey = `${rBucket},${gBucket},${bBucket}`;
+                    
+                    colorMap.set(colorKey, (colorMap.get(colorKey) || 0) + 1);
+                    centerCount++;
                 }
             }
             
+            // Find most common color in center
+            let maxCount = 0;
+            let dominantColorKey = '';
+            for (const [colorKey, pixelCount] of colorMap.entries()) {
+                if (pixelCount > maxCount) {
+                    maxCount = pixelCount;
+                    dominantColorKey = colorKey;
+                }
+            }
+            
+            // If this dominant color represents >40% of center area, it's likely a background rectangle
+            const hasColoredBackground = maxCount / centerCount > 0.4;
+            
+            let centerR = 0, centerG = 0, centerB = 0;
+            if (hasColoredBackground && dominantColorKey) {
+                const [rBucket, gBucket, bBucket] = dominantColorKey.split(',').map(Number);
+                centerR = rBucket * 16 + 8; // Center of bucket
+                centerG = gBucket * 16 + 8;
+                centerB = bBucket * 16 + 8;
+            }
+
+            // STEP 3: Remove both border color AND colored background
+            const tolerance = 60;
+            const centerTolerance = 40; // Tighter tolerance for center color
+            
+            for (let i = 0; i < data.length; i += 4) {
+                const r = data[i];
+                const g = data[i + 1];
+                const b = data[i + 2];
+
+                // Check distance to border color
+                const borderDist = Math.sqrt(
+                    (r - borderR) * (r - borderR) + 
+                    (g - borderG) * (g - borderG) + 
+                    (b - borderB) * (b - borderB)
+                );
+
+                // Check distance to center background color (if exists)
+                let centerDist = Infinity;
+                if (hasColoredBackground) {
+                    centerDist = Math.sqrt(
+                        (r - centerR) * (r - centerR) + 
+                        (g - centerG) * (g - centerG) + 
+                        (b - centerB) * (b - centerB)
+                    );
+                }
+
+                // Remove if matches either border or center background
+                if (borderDist < tolerance) {
+                    data[i + 3] = 0;
+                } else if (borderDist < tolerance + 20) {
+                    const alpha = (borderDist - tolerance) / 20 * 255;
+                    data[i + 3] = Math.min(255, alpha);
+                } else if (centerDist < centerTolerance) {
+                    data[i + 3] = 0;
+                } else if (centerDist < centerTolerance + 20) {
+                    const alpha = (centerDist - centerTolerance) / 20 * 255;
+                    data[i + 3] = Math.min(255, alpha);
+                }
+            }
+            
+            // CRITICAL: Update the canvas with background-removed data
             ctx.putImageData(imageData, 0, 0);
         }
 
         // ---------------------------------------------------------
-        // RECOLORING
+        // RECOLORING - PRESERVES LOGO DETAILS
         // ---------------------------------------------------------
 
         if (targetColor !== 'original') {
+             // CRITICAL FIX: Get fresh imageData after background removal
+             const freshImageData = ctx.getImageData(0, 0, w, h);
+             const freshData = freshImageData.data;
+             
              const targetRgb = hexToRgb(targetColor);
              
-             // Iterate through pixels and replace RGB while preserving alpha and shading (luminance)
-             for (let i = 0; i < data.length; i += 4) {
-                 const alpha = data[i + 3];
+             for (let i = 0; i < freshData.length; i += 4) {
+                 const alpha = freshData[i + 3];
                  
-                 if (alpha > 0) {
-                     // Calculate luminance to preserve shading
-                     const originalR = data[i];
-                     const originalG = data[i + 1];
-                     const originalB = data[i + 2];
+                 // Skip fully transparent pixels
+                 if (alpha === 0) continue;
+                 
+                 const originalR = freshData[i];
+                 const originalG = freshData[i + 1];
+                 const originalB = freshData[i + 2];
+                 
+                 // Calculate luminance to preserve shading
+                 const luminance = (0.299 * originalR + 0.587 * originalG + 0.114 * originalB) / 255;
+                 
+                 // Check if pixel is very close to white (RGB values)
+                 const isNearWhite = originalR > 150 && originalG > 150 && originalB > 150;
+                 
+                 // CRITICAL: Aggressively remove light background pixels
+                 if (luminance > 0.60 || alpha < 200 || isNearWhite) {
+                     freshData[i + 3] = 0;
+                 } else {
+                     // BRIGHTNESS FIX: Boost luminance to make colors closer to chosen color
+                     // Remap from [0, 0.60] to [0.5, 1.0] to brighten while preserving shading
+                     const boostedLuminance = 0.5 + (luminance / 0.60) * 0.5;
                      
-                     // Standard perceived luminance formula
-                     const luminance = (0.299 * originalR + 0.587 * originalG + 0.114 * originalB) / 255;
-                     
-                     // Apply target color modulated by luminance
-                     data[i] = targetRgb.r * luminance;
-                     data[i + 1] = targetRgb.g * luminance;
-                     data[i + 2] = targetRgb.b * luminance;
+                     // Apply new color with boosted luminance
+                     freshData[i] = Math.min(255, targetRgb.r * boostedLuminance);
+                     freshData[i + 1] = Math.min(255, targetRgb.g * boostedLuminance);
+                     freshData[i + 2] = Math.min(255, targetRgb.b * boostedLuminance);
                  }
              }
              
-             ctx.putImageData(imageData, 0, 0);
+             // Put the recolored data back on canvas
+             ctx.putImageData(freshImageData, 0, 0);
         }
 
         const finalDataUrl = canvas.toDataURL('image/png');
