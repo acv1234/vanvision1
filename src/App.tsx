@@ -807,33 +807,6 @@ ${quoteData.additionalNotes || 'None provided'}
                   label="Underlayment Color"
                 />
 
-                <div className="flex flex-col gap-3">
-                  <div className="flex justify-between items-baseline">
-                    <label className="text-sm font-bold uppercase tracking-wide text-vb-dark">Output Quality</label>
-                  </div>
-                  <div className="grid grid-cols-3 gap-2">
-                    {[
-                      { val: '1K', label: '1K', hint: 'Standard' },
-                      { val: '2K', label: '2K', hint: 'HD Pro' },
-                      { val: '4K', label: '4K', hint: 'Ultra Pro' }
-                    ].map((opt) => (
-                      <button
-                        key={opt.val}
-                        onClick={() => setQuality(opt.val as ImageQuality)}
-                        className={`
-                          flex flex-col items-center justify-center py-2 px-1 border-2 transition-all
-                          ${quality === opt.val 
-                            ? 'border-vb-dark bg-vb-dark text-white ring-2 ring-gray-200' 
-                            : 'border-gray-200 text-gray-500 hover:border-gray-300'
-                          }
-                        `}
-                      >
-                        <span className="text-xs font-bold">{opt.label}</span>
-                        <span className="text-[10px] opacity-70">{opt.hint}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
                 
                 <div className="flex flex-col gap-2">
                   <label className="text-sm font-bold uppercase tracking-wide text-vb-dark">Email Address</label>
@@ -957,6 +930,50 @@ ${quoteData.additionalNotes || 'None provided'}
                 )}
               </div>
             </div>
+
+            {/* Design History Gallery */}
+            {recentMockups.length > 0 && (
+              <div className="bg-white shadow-lg mt-6">
+                <div className="bg-vb-dark text-white py-3 px-6">
+                  <h3 className="uppercase font-bold tracking-widest text-sm">
+                    Design History ({recentMockups.length} {recentMockups.length === 1 ? 'design' : 'designs'} this session)
+                  </h3>
+                </div>
+                <div className="p-4 border border-t-0 border-gray-200">
+                  <div className="flex gap-4 overflow-x-auto pb-2">
+                    {recentMockups.map((item) => (
+                      <div
+                        key={item.id}
+                        className="flex-shrink-0 cursor-pointer group"
+                        onClick={() => setResultImage(item.image)}
+                        title="Click to view this design"
+                      >
+                        <div className="w-32 h-32 border-2 border-gray-200 group-hover:border-vb-blue transition-all overflow-hidden bg-gray-50 relative">
+                          <img 
+                            src={item.image} 
+                            alt={`Design from ${item.timestamp}`}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform"
+                          />
+                          {resultImage === item.image && (
+                            <div className="absolute inset-0 border-4 border-green-500 pointer-events-none"></div>
+                          )}
+                        </div>
+                        <div className="mt-2 text-center">
+                          <div className="text-xs font-bold text-gray-600">{item.timestamp}</div>
+                          <div className="text-xs text-gray-500 flex items-center justify-center gap-2 mt-1">
+                            <span 
+                              className="w-3 h-3 rounded-full border border-gray-300" 
+                              style={{ backgroundColor: item.color }}
+                            ></span>
+                            <span className="capitalize">{item.color === '#ffffff' ? 'White' : item.color === '#0c0a09' ? 'Black' : 'Color'}</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
         </div>
@@ -980,4 +997,3 @@ ${quoteData.additionalNotes || 'None provided'}
   );
 };
 
-export default App;
